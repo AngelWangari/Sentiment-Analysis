@@ -10,11 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import LinearSVC
 
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    f1_score
-)
+from sklearn.metrics import accuracy_score, classification_report, f1_score
 
 # =====================================================
 # 1. LOAD DATA
@@ -28,6 +24,7 @@ df = pd.read_csv(DATA_PATH, encoding="latin1")
 # 2. CLEAN TEXT
 # =====================================================
 
+
 def clean_text(text):
 
     text = str(text).lower()
@@ -40,7 +37,7 @@ def clean_text(text):
         "suicide": "end my life",
         "self harm": "self_harm",
         "panic attack": "panic_attack",
-        "want to die": "want_to_die"
+        "want to die": "want_to_die",
     }
 
     for old, new in replacements.items():
@@ -66,7 +63,7 @@ label_mapping = {
     "Stress": "negative",
     "Bipolar": "negative",
     "Personality disorder": "negative",
-    "Normal": "neutral"
+    "Normal": "neutral",
 }
 
 df["status"] = df["status"].map(label_mapping)
@@ -84,7 +81,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     df["status"],
     test_size=0.20,
     random_state=42,
-    stratify=df["status"]
+    stratify=df["status"],
 )
 
 # =====================================================
@@ -97,7 +94,7 @@ vectorizer = TfidfVectorizer(
     stop_words="english",
     min_df=2,
     max_df=0.95,
-    sublinear_tf=True
+    sublinear_tf=True,
 )
 
 X_train_vec = vectorizer.fit_transform(X_train)
@@ -115,20 +112,14 @@ print("\nSTARTING GRID SEARCH...")
 # Logistic Regression
 # ----------------------------
 
-lr_params = {
-    "C": [0.1, 1, 10],
-    "solver": ["lbfgs", "liblinear"]
-}
+lr_params = {"C": [0.1, 1, 10], "solver": ["lbfgs", "liblinear"]}
 
 lr_grid = GridSearchCV(
-    LogisticRegression(
-        max_iter=2000,
-        class_weight="balanced"
-    ),
+    LogisticRegression(max_iter=2000, class_weight="balanced"),
     lr_params,
     scoring="f1_macro",
     cv=3,
-    n_jobs=-1
+    n_jobs=-1,
 )
 
 lr_grid.fit(X_train_vec, y_train)
@@ -142,17 +133,9 @@ print(lr_grid.best_params_)
 # Naive Bayes
 # ----------------------------
 
-nb_params = {
-    "alpha": [0.1, 0.5, 1.0]
-}
+nb_params = {"alpha": [0.1, 0.5, 1.0]}
 
-nb_grid = GridSearchCV(
-    MultinomialNB(),
-    nb_params,
-    scoring="f1_macro",
-    cv=3,
-    n_jobs=-1
-)
+nb_grid = GridSearchCV(MultinomialNB(), nb_params, scoring="f1_macro", cv=3, n_jobs=-1)
 
 nb_grid.fit(X_train_vec, y_train)
 
@@ -165,19 +148,14 @@ print(nb_grid.best_params_)
 # Linear SVM
 # ----------------------------
 
-svm_params = {
-    "C": [0.1, 1, 10]
-}
+svm_params = {"C": [0.1, 1, 10]}
 
 svm_grid = GridSearchCV(
-    LinearSVC(
-        class_weight="balanced",
-        dual=False
-    ),
+    LinearSVC(class_weight="balanced", dual=False),
     svm_params,
     scoring="f1_macro",
     cv=3,
-    n_jobs=-1
+    n_jobs=-1,
 )
 
 svm_grid.fit(X_train_vec, y_train)
@@ -191,16 +169,11 @@ print(svm_grid.best_params_)
 # 7. EVALUATE MODELS
 # =====================================================
 
-models = {
-    "Logistic Regression": lr,
-    "Naive Bayes": nb,
-    "Linear SVM": svm
-}
+models = {"Logistic Regression": lr, "Naive Bayes": nb, "Linear SVM": svm}
 
 results = []
 
 for name, model in models.items():
-
     print("\n" + "=" * 60)
     print(name)
     print("=" * 60)
@@ -215,11 +188,7 @@ for name, model in models.items():
 
     print(classification_report(y_test, predictions))
 
-    results.append({
-        "Model": name,
-        "Accuracy": acc,
-        "Macro F1": f1
-    })
+    results.append({"Model": name, "Accuracy": acc, "Macro F1": f1})
 
 # =====================================================
 # 8. SAVE MODELS
@@ -238,18 +207,12 @@ joblib.dump(svm, "models/svm.pkl")
 
 results_df = pd.DataFrame(results)
 
-results_df = results_df.sort_values(
-    by="Macro F1",
-    ascending=False
-)
+results_df = results_df.sort_values(by="Macro F1", ascending=False)
 
 print("\nFINAL MODEL COMPARISON")
 print(results_df)
 
-results_df.to_csv(
-    "model_comparison_results.csv",
-    index=False
-)
+results_df.to_csv("model_comparison_results.csv", index=False)
 
 best_model_name = results_df.iloc[0]["Model"]
 
