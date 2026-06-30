@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Realtime Sentiment Analyzer</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f8fb; }
+      .card { max-width: 760px; margin: 0 auto; background: white; border-radius: 12px; padding: 1.25rem; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+      textarea { width: 100%; min-height: 120px; border-radius: 8px; border: 1px solid #cfd6e6; padding: 0.75rem; font-size: 1rem; }
+      .row { margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+      .badge { font-weight: bold; border-radius: 20px; padding: .35rem .75rem; background: #eef2ff; }
+      .model { color: #566; font-size: .9rem; }
+      .status { margin-top: .5rem; font-size: .9rem; color: #345; }
+      .error { color: #9b1c1c; }
+      .bars { margin-top: 1rem; }
+      .bar-wrap { margin: .45rem 0; }
+      .bar-label { font-size: .9rem; margin-bottom: .2rem; }
+      .bar { height: 14px; background: #e8ecf6; border-radius: 999px; overflow: hidden; }
+      .fill { height: 100%; background: linear-gradient(90deg,#7aa2ff,#5fd0ff); width: 0%; transition: width .2s ease; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>Realtime Sentiment Analyzer</h2>
+      <p>Type text below to get live sentiment predictions (positive / neutral / negative).</p>
+      <textarea id="text" placeholder="Example: This product is okay, nothing special."></textarea>
+
+      <div class="row">
+        <div>Detected sentiment: <span id="label" class="badge">neutral</span></div>
+        <div id="model" class="model">Model: loading...</div>
+      </div>
+      <div id="status" class="status">Checking backend...</div>
+
+      <div class="bars">
+        <div class="bar-wrap"><div class="bar-label">Positive: <span id="positive-v">0%</span></div><div class="bar"><div id="positive" class="fill"></div></div></div>
+        <div class="bar-wrap"><div class="bar-label">Neutral: <span id="neutral-v">0%</span></div><div class="bar"><div id="neutral" class="fill"></div></div></div>
+        <div class="bar-wrap"><div class="bar-label">Negative: <span id="negative-v">0%</span></div><div class="bar"><div id="negative" class="fill"></div></div></div>
+      </div>
+    </div>
+
+    <script>
+      const textEl = document.getElementById('text');
+      const labelEl = document.getElementById('label');
+      const modelEl = document.getElementById('model');
+      const statusEl = document.getElementById('status');
+
+      const setBar = (name, value) => {
+        const normalized = Math.min(1, Math.max(0, value));
+        document.getElementById(name).style.width = `${Math.round(normalized * 100)}%`;
+        document.getElementById(`${name}-v`).textContent = `${Math.round(normalized * 100)}%`;
+      };
+
+      const fallbackAnalyze = (text) => {
+        const neutralWords = new Set(['okay', 'fine', 'normal', 'average', 'neutral', 'regular', 'standard', 'alright']);
+        const positiveWords = new Set(['great', 'excellent', 'love', 'amazing', 'happy', 'good']);
+        const negativeWords = new Set(['bad', 'terrible', 'hate', 'awful', 'sad', 'angry']);
+
+        const tokens = new Set(text.split(/\s+/).map((t) => t.replace(/[.,!?;:]/g, '').toLowerCase()).filter(Boolean));
+        const size = Math.max(1, tokens.size);
+        const countMatches = (words) => [...tokens].filter((token) => words.has(token)).length;
+
+        const positive = countMatches(positiveWords) / size;
+        const negative = countMatches(negativeWords) / size;
+        const explicitNeutral = countMatches(neutralWords) / size;
+        const neutral = Math.max(explicitNeutral, Math.max(0.4, 1 - (positive + negative)));
+
+        const scores = [
+          { label: 'positive', score: positive },
+          { label: 'neutral', score: neutral },
+          { label: 'negative', score: negative },
+        ];
+        const best = scores.reduce((a, b) => (a.score > b.score ? a : b));
+        return {
+          label: best.label,
+          confidence: best.score,
+          scores,
+          model: 'frontend-heuristic-fallback',
+        };
+      };
+
+      const renderData = (data) => {
+        labelEl.textContent = `${data.label} (${Math.round(data.confidence * 100)}%)`;
+        modelEl.textContent = `Model: ${data.model}`;
+
+        const map = Object.fromEntries(data.scores.map((s) => [s.label, s.score]));
+        setBar('positive', map.positive || 0);
+        setBar('neutral', map.neutral || 0);
+        setBar('negative', map.negative || 0);
+      };
+
+      const detectModelInfo = async () => {
+        try {
+          const res = await fetch('/models');
+          if (!res.ok) throw new Error('Model endpoint unavailable');
+          const info = await res.json();
+          const state = info.primary_loaded ? 'online' : 'fallback mode';
+          statusEl.classList.remove('error');
+          statusEl.textContent = `Backend ${state}. Primary: ${info.primary}. Fallback: ${info.fallback}.`;
+        } catch (_err) {
+          statusEl.classList.add('error');
+          statusEl.textContent = 'Backend not reachable. Showing frontend fallback percentages.';
+          modelEl.textContent = 'Model: frontend-heuristic-fallback';
+        }
+      };
+
+      let timer;
+      const analyze = async () => {
+        const text = textEl.value.trim();
+        if (!text) {
+          labelEl.textContent = 'neutral';
+          ['positive', 'neutral', 'negative'].forEach((s) => setBar(s, 0));
+          return;
+        }
+
+        try {
+          const res = await fetch('/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+          });
+          if (!res.ok) throw new Error('API error');
+          const data = await res.json();
+          statusEl.classList.remove('error');
+          renderData(data);
+        } catch (_err) {
+          statusEl.classList.add('error');
+          statusEl.textContent = 'Using frontend fallback because /analyze is unavailable.';
+          renderData(fallbackAnalyze(text));
+        }
+      };
+
+      detectModelInfo();
+      textEl.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(analyze, 150);
+      });
+    </script>
+  </body>
+</html>
